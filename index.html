@@ -417,12 +417,12 @@ body.urdu .close-modal{right:auto;left:0}
   </div>
 </div>
 
-<>
+<script>
 // ============================================================
 // CONFIGURATION
 // ============================================================
 const CONFIG = {
-  SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwBm7UriIBSzfbg9rZbvzq95Q_Lc4dwfWrlYf8q9TLnrDgQBBpOZgjE7epWj3tYOJow/exec',
+  SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzvc54Dd15hxZRpPgerPuEn7wmYaD4ZFBYypC9PuB4PrfMEllpXMKLe4PEW10WdRKrs/exec',
   PASSWORD: 'showroom2025',
   LICENSE_KEY: '',
   USER_EMAIL: ''
@@ -575,28 +575,6 @@ function showPaymentAlert(message) {
 // ============================================================
 // DATA LOADING
 // ============================================================
-function safeDate(val) {
-  if (!val) return '';
-  if (typeof val === 'string') {
-    // Already a string - just take date part
-    return val.toString().split('T')[0].split(' ')[0];
-  }
-  if (typeof val === 'number') {
-    // Excel serial date from Google Sheets
-    const d = new Date((val - 25569) * 86400 * 1000);
-    return d.toISOString().split('T')[0];
-  }
-  if (val instanceof Date || (val && val.getFullYear)) {
-    return new Date(val).toISOString().split('T')[0];
-  }
-  // Try to parse whatever it is
-  try {
-    const d = new Date(val);
-    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-  } catch(e) {}
-  return val.toString();
-}
-
 async function loadAllData() {
   try {
     const result = await post({ action: 'getAll' });
@@ -605,38 +583,21 @@ async function loadAllData() {
       allReceiptsCache = result.receipts || [];
       allInstallmentsCache = result.installments || [];
       allExpensesCache = result.expenses || [];
-      employeesList = (result.employees || []).map(e => e.employeeName).filter(Boolean);
+      employeesList = (result.employees || []).map(e => e.employeeName);
       usageData = result.usage || {};
       
-      // Fix date formats from Google Sheets
+      // Merge expenses into receipts
       allReceiptsCache.forEach(r => {
-        r.sellingDate = safeDate(r.sellingDate);
-        r.timestamp = safeDate(r.timestamp);
-        r.carName = r.carName ? r.carName.toString() : '';
-        r.regNumber = r.regNumber ? r.regNumber.toString() : '';
-        r.customerName = r.customerName ? r.customerName.toString() : '';
-        r.customerPhone = r.customerPhone ? r.customerPhone.toString() : '';
-        r.soldBy = r.soldBy ? r.soldBy.toString() : '';
-        r.paymentType = r.paymentType ? r.paymentType.toString() : 'CASH';
-        r.sellingPrice = parseFloat(r.sellingPrice) || 0;
-        r.purchaseCost = parseFloat(r.purchaseCost) || 0;
-        r.downPayment = parseFloat(r.downPayment) || 0;
-        
-        // Merge expenses into receipts
         const exps = allExpensesCache.filter(e => e.receiptId === r.receiptId);
-        r.expenses = exps.map(e => ({
-          type: e.expenseType || 'Other',
-          description: e.description || '',
-          amount: parseFloat(e.amount) || 0
-        }));
-      });
-      
-      // Fix installment dates
-      allInstallmentsCache.forEach(i => {
-        i.dueDate = safeDate(i.dueDate);
-        i.paidDate = safeDate(i.paidDate);
-        i.status = i.status ? i.status.toString() : 'PENDING';
-        i.amount = parseFloat(i.amount) || 0;
+        if (exps.length > 0) {
+          r.expenses = exps.map(e => ({
+            type: e.expenseType,
+            description: e.description,
+            amount: parseFloat(e.amount) || 0
+          }));
+        } else if (!r.expenses) {
+          r.expenses = [];
+        }
       });
       
       // Update UI
@@ -644,10 +605,6 @@ async function loadAllData() {
       updateUsageDisplay();
       loadEmployeesIntoDropdowns();
       checkOverduePayments();
-      
-      console.log('✅ Loaded:', allReceiptsCache.length, 'receipts');
-    } else {
-      console.error('Failed to load data:', result.error);
     }
   } catch(error) {
     console.error('Error loading data:', error);
@@ -853,9 +810,6 @@ function switchTab(tab, ev) {
   document.getElementById(tab+'-tab').classList.add('active');
   
   if (tab==='all') loadAllReceipts();
-  if (tab==='payments') loadPayments();
-  if (tab==='profit') calculateProfit();
-  if (tab==='search') { if(allReceiptsCache.length===0) loadAllData(); loadEmployeesIntoDropdowns(); }
   else if (tab==='analytics') calculateAnalytics();
   else if (tab==='payments') loadPayments();
   else if (tab==='profit') calculateProfit();
@@ -1270,15 +1224,10 @@ async function performSearch() {
   if(allReceiptsCache.length===0) await loadAllData();
   
   let f=allReceiptsCache;
-  if(si) f=f.filter(r=>
-    (r.regNumber||'').toUpperCase().includes(si)||
-    (r.carName||'').toUpperCase().includes(si)||
-    (r.customerName||'').toUpperCase().includes(si)||
-    (r.customerPhone||'').includes(si)
-  );
-  if(se) f=f.filter(r=>(r.soldBy||'')===se);
+  if(si) f=f.filter(r=>r.regNumber.includes(si)||(r.carName||'').toUpperCase().includes(si)||(r.customerName||'').toUpperCase().includes(si));
+  if(se) f=f.filter(r=>r.soldBy===se);
   
-  rd.innerHTML = f.length ? f.map(r=>receiptCardHTML(r)).join('') : '<div class="no-results">❌ No results found. Try different search terms.</div>';
+  rd.innerHTML = f.length ? f.map(r=>receiptCardHTML(r)).join('') : '<div class="no-results">❌ Not found</div>';
 }
 
 // ============================================================
